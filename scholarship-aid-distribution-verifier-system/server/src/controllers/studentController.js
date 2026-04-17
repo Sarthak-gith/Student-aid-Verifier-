@@ -26,8 +26,21 @@ export async function getStudentDashboard(req, res, next) {
         ON st.Student_ID = a.Student_ID
       JOIN Scholarship s
         ON s.Scholarship_ID = a.Scholarship_ID
-      LEFT JOIN Disbursement d
+      LEFT JOIN (
+        SELECT
+          Disbursement_ID,
+          Amount_Disbursed,
+          Disbursement_Date,
+          Payment_Mode,
+          Application_ID,
+          ROW_NUMBER() OVER (
+            PARTITION BY Application_ID
+            ORDER BY Disbursement_Date DESC, Disbursement_ID DESC
+          ) AS rn
+        FROM Disbursement
+      ) d
         ON d.Application_ID = a.Application_ID
+        AND d.rn = 1
       WHERE a.Student_ID = :studentId
       ORDER BY a.Application_Date DESC`,
       { studentId },

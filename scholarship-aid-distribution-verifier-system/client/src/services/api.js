@@ -34,6 +34,13 @@ export function getAuthority(authorityId) {
   return request(`/authorities/${encodeURIComponent(authorityId)}`);
 }
 
+export function loginAuthority(payload) {
+  return request("/authorities/login", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function processApplication(payload) {
   return request("/applications/process", {
     method: "POST",

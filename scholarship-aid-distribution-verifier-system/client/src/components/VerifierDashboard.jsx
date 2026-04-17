@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import StatusBadge from "./StatusBadge";
 import {
-  getAuthority,
   getPendingApplications,
   getProcessedApplications,
+  loginAuthority,
   processApplication,
   undoApplication
 } from "../services/api";
@@ -18,6 +18,7 @@ export default function VerifierDashboard() {
   const [applications, setApplications] = useState([]);
   const [processedApplications, setProcessedApplications] = useState([]);
   const [authorityId, setAuthorityId] = useState("");
+  const [authorityPassword, setAuthorityPassword] = useState("");
   const [activeAuthority, setActiveAuthority] = useState(null);
   const [loading, setLoading] = useState(true);
   const [checkingAuthority, setCheckingAuthority] = useState(false);
@@ -48,7 +49,7 @@ export default function VerifierDashboard() {
 
   async function handleProcess(application, status) {
     if (!activeAuthority) {
-      setError("Set your Authority_ID before processing applications.");
+      setError("Log in with Authority_ID and password before processing applications.");
       return;
     }
 
@@ -107,8 +108,8 @@ export default function VerifierDashboard() {
   }
 
   async function handleSetAuthority() {
-    if (!authorityId.trim()) {
-      setError("Enter Authority_ID before setting verifier identity.");
+    if (!authorityId.trim() || !authorityPassword) {
+      setError("Enter Authority_ID and password before logging in.");
       return;
     }
 
@@ -116,8 +117,12 @@ export default function VerifierDashboard() {
     setError("");
 
     try {
-      const data = await getAuthority(authorityId.trim());
+      const data = await loginAuthority({
+        authorityId: authorityId.trim(),
+        password: authorityPassword
+      });
       setActiveAuthority(data.authority);
+      setAuthorityPassword("");
     } catch (requestError) {
       setActiveAuthority(null);
       setError(requestError.message);
@@ -137,17 +142,24 @@ export default function VerifierDashboard() {
             Pending scholarship applications
           </h2>
         </div>
-        <div className="w-full max-w-md">
+        <div className="w-full max-w-xl">
           <label className="text-sm font-semibold text-academic-ink" htmlFor="authority-id">
             Authority_ID
           </label>
-          <div className="mt-2 flex gap-2">
+          <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
             <input
               id="authority-id"
               value={authorityId}
               onChange={(event) => setAuthorityId(event.target.value)}
               placeholder="Enter Authority_ID"
               className="min-h-11 flex-1 rounded border border-academic-line bg-white px-4 outline-none focus:border-academic-navy focus:ring-2 focus:ring-academic-navy/15"
+            />
+            <input
+              type="password"
+              value={authorityPassword}
+              onChange={(event) => setAuthorityPassword(event.target.value)}
+              placeholder="Password"
+              className="min-h-11 rounded border border-academic-line bg-white px-4 outline-none focus:border-academic-navy focus:ring-2 focus:ring-academic-navy/15"
             />
             <button
               type="button"
@@ -159,7 +171,7 @@ export default function VerifierDashboard() {
                 ? "Checking..."
                 : activeAuthority
                   ? `Logged in: ${activeAuthority.authorityId}`
-                  : "Set ID"}
+                  : "Log in"}
             </button>
           </div>
           {activeAuthority && (

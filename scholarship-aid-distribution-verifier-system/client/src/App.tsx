@@ -2,13 +2,20 @@ import { useState } from "react";
 import StudentPortal from "./components/StudentPortal";
 import VerifierDashboard from "./components/VerifierDashboard";
 
-const tabs = [
+type TabId = "student" | "verifier";
+
+type Tab = {
+  id: TabId;
+  label: string;
+};
+
+const tabs: Tab[] = [
   { id: "student", label: "Student Portal" },
   { id: "verifier", label: "Verifier Dashboard" }
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("student");
+  const [activeTab, setActiveTab] = useState<TabId>("student");
 
   return (
     <main className="min-h-screen bg-academic-paper">

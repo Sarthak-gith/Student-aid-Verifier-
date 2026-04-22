@@ -5,7 +5,9 @@ import {
   getProcessedApplications,
   loginAuthority,
   processApplication,
-  undoApplication
+  undoApplication,
+  type Authority,
+  type VerifierApplication
 } from "../services/api";
 
 const currency = new Intl.NumberFormat("en-IN", {
@@ -15,18 +17,18 @@ const currency = new Intl.NumberFormat("en-IN", {
 });
 
 export default function VerifierDashboard() {
-  const [applications, setApplications] = useState([]);
-  const [processedApplications, setProcessedApplications] = useState([]);
+  const [applications, setApplications] = useState<VerifierApplication[]>([]);
+  const [processedApplications, setProcessedApplications] = useState<VerifierApplication[]>([]);
   const [authorityId, setAuthorityId] = useState("");
   const [authorityPassword, setAuthorityPassword] = useState("");
-  const [activeAuthority, setActiveAuthority] = useState(null);
+  const [activeAuthority, setActiveAuthority] = useState<Authority | null>(null);
   const [loading, setLoading] = useState(true);
   const [checkingAuthority, setCheckingAuthority] = useState(false);
-  const [processingId, setProcessingId] = useState(null);
+  const [processingId, setProcessingId] = useState<number | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    loadApplications();
+    void loadApplications();
   }, []);
 
   async function loadApplications() {
@@ -41,13 +43,16 @@ export default function VerifierDashboard() {
       setApplications(pendingData.applications || []);
       setProcessedApplications(processedData.applications || []);
     } catch (requestError) {
-      setError(requestError.message);
+      setError(requestError instanceof Error ? requestError.message : "Request failed.");
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleProcess(application, status) {
+  async function handleProcess(
+    application: VerifierApplication,
+    status: "Approved" | "Rejected"
+  ) {
     if (!activeAuthority) {
       setError("Log in with Authority_ID and password before processing applications.");
       return;
@@ -79,13 +84,13 @@ export default function VerifierDashboard() {
     } catch (requestError) {
       setApplications(previousApplications);
       setProcessedApplications(previousProcessedApplications);
-      setError(requestError.message);
+      setError(requestError instanceof Error ? requestError.message : "Request failed.");
     } finally {
       setProcessingId(null);
     }
   }
 
-  async function handleUndo(application) {
+  async function handleUndo(application: VerifierApplication) {
     const previousApplications = applications;
     const previousProcessedApplications = processedApplications;
 
@@ -101,7 +106,7 @@ export default function VerifierDashboard() {
     } catch (requestError) {
       setApplications(previousApplications);
       setProcessedApplications(previousProcessedApplications);
-      setError(requestError.message);
+      setError(requestError instanceof Error ? requestError.message : "Request failed.");
     } finally {
       setProcessingId(null);
     }
@@ -125,7 +130,7 @@ export default function VerifierDashboard() {
       setAuthorityPassword("");
     } catch (requestError) {
       setActiveAuthority(null);
-      setError(requestError.message);
+      setError(requestError instanceof Error ? requestError.message : "Request failed.");
     } finally {
       setCheckingAuthority(false);
     }
@@ -203,13 +208,13 @@ export default function VerifierDashboard() {
           <tbody>
             {loading ? (
               <tr>
-                <td className="px-4 py-6 text-center text-sm text-slate-500" colSpan="6">
+                <td className="px-4 py-6 text-center text-sm text-slate-500" colSpan={6}>
                   Loading pending applications...
                 </td>
               </tr>
             ) : applications.length === 0 ? (
               <tr>
-                <td className="px-4 py-6 text-center text-sm text-slate-500" colSpan="6">
+                <td className="px-4 py-6 text-center text-sm text-slate-500" colSpan={6}>
                   No pending applications.
                 </td>
               </tr>
@@ -230,14 +235,14 @@ export default function VerifierDashboard() {
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-2">
                       <button
-                        onClick={() => handleProcess(application, "Approved")}
+                        onClick={() => void handleProcess(application, "Approved")}
                         disabled={processingId === application.applicationId}
                         className="min-h-10 rounded bg-green-600 px-3 text-sm font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         Approve
                       </button>
                       <button
-                        onClick={() => handleProcess(application, "Rejected")}
+                        onClick={() => void handleProcess(application, "Rejected")}
                         disabled={processingId === application.applicationId}
                         className="min-h-10 rounded bg-red-600 px-3 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
                       >
@@ -276,7 +281,7 @@ export default function VerifierDashboard() {
             <tbody>
               {processedApplications.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-5 text-center text-sm text-slate-500" colSpan="5">
+                  <td className="px-4 py-5 text-center text-sm text-slate-500" colSpan={5}>
                     No approved or rejected applications yet.
                   </td>
                 </tr>
@@ -294,7 +299,7 @@ export default function VerifierDashboard() {
                     </td>
                     <td className="px-4 py-3">
                       <button
-                        onClick={() => handleUndo(application)}
+                        onClick={() => void handleUndo(application)}
                         disabled={processingId === application.applicationId}
                         className="min-h-10 rounded border border-academic-navy bg-white px-3 text-sm font-semibold text-academic-navy hover:bg-[#edf3f8] disabled:cursor-not-allowed disabled:opacity-60"
                       >

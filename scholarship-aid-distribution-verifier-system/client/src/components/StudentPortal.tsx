@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { getStudentDashboard } from "../services/api";
+import { getStudentDashboard, type StudentApplication } from "../services/api";
 import StatusBadge from "./StatusBadge";
 
 const currency = new Intl.NumberFormat("en-IN", {
@@ -11,11 +11,11 @@ const currency = new Intl.NumberFormat("en-IN", {
 export default function StudentPortal() {
   const [studentId, setStudentId] = useState("");
   const [studentName, setStudentName] = useState("");
-  const [applications, setApplications] = useState([]);
+  const [applications, setApplications] = useState<StudentApplication[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  async function handleSubmit(event) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!studentId.trim()) {
@@ -33,7 +33,7 @@ export default function StudentPortal() {
     } catch (requestError) {
       setStudentName("");
       setApplications([]);
-      setError(requestError.message);
+      setError(requestError instanceof Error ? requestError.message : "Request failed.");
     } finally {
       setLoading(false);
     }
@@ -94,7 +94,7 @@ export default function StudentPortal() {
           <tbody>
             {applications.length === 0 ? (
               <tr>
-                <td className="px-4 py-6 text-center text-sm text-slate-500" colSpan="4">
+                <td className="px-4 py-6 text-center text-sm text-slate-500" colSpan={4}>
                   No applications to display.
                 </td>
               </tr>

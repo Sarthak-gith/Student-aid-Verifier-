@@ -1,7 +1,5 @@
 import oracledb from "oracledb";
-import dotenv from "dotenv";
-
-dotenv.config();
+import { env } from "./env.js";
 
 let pool;
 

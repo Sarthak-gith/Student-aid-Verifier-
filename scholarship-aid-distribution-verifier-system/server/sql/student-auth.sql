@@ -1,0 +1,17 @@
+CREATE TABLE Student_Account (
+  Student_ID NUMBER PRIMARY KEY,
+  Password_Salt VARCHAR2(128) NOT NULL,
+  Password_Hash VARCHAR2(256) NOT NULL,
+  Created_At TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+  Updated_At TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+  CONSTRAINT fk_student_account_student
+    FOREIGN KEY (Student_ID) REFERENCES Student(Student_ID)
+);
+
+CREATE OR REPLACE TRIGGER trg_student_account_updated_at
+BEFORE UPDATE ON Student_Account
+FOR EACH ROW
+BEGIN
+  :NEW.Updated_At := SYSTIMESTAMP;
+END;
+/

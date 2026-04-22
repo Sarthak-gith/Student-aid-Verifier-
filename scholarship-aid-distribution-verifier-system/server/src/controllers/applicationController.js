@@ -1,4 +1,5 @@
 import { dbOptions, getConnection } from "../config/db.js";
+import { documentUploadSchema } from "../validators/applicationSchemas.js";
 
 const VALID_STATUSES = new Set(["Approved", "Rejected"]);
 
@@ -25,6 +26,340 @@ async function getNextId(connection, tableName, columnName, alias) {
   );
 
   return result.rows[0][alias];
+}
+
+async function getApplicationOwnership(connection, applicationId) {
+  const result = await connection.execute(
+    `SELECT
+      a.Application_ID AS "applicationId",
+      a.Student_ID AS "studentId",
+      a.Status AS "status"
+    FROM Application a
+    WHERE a.Application_ID = :applicationId`,
+    { applicationId },
+    dbOptions
+  );
+
+  return result.rows[0] || null;
+}
+
+async function logApplicationStatusEvent(
+  connection,
+  { applicationId, status, eventType, notes = null, actorRole, actorId = null }
+) {
+  const historyId = await getNextId(
+    connection,
+    "Application_Status_History",
+    "Application_Status_History_ID",
+    "nextApplicationStatusHistoryId"
+  );
+
+  await connection.execute(
+    `INSERT INTO Application_Status_History (
+      Application_Status_History_ID,
+      Application_ID,
+      Status,
+      Event_Type,
+      Notes,
+      Actor_Role,
+      Actor_ID,
+      Changed_At
+    ) VALUES (
+      :historyId,
+      :applicationId,
+      :status,
+      :eventType,
+      :notes,
+      :actorRole,
+      :actorId,
+      SYSTIMESTAMP
+    )`,
+    {
+      historyId,
+      applicationId,
+      status,
+      eventType,
+      notes,
+      actorRole,
+      actorId
+    }
+  );
+}
+
+export async function submitApplication(req, res, next) {
+  let connection;
+
+  try {
+    const { studentId, scholarshipId } = req.validated?.body || req.body;
+
+    if (!req.auth || req.auth.role !== "Student") {
+      return res.status(401).json({ message: "Student authentication required." });
+    }
+
+    if (Number(req.auth.studentId) !== Number(studentId)) {
+      return res.status(403).json({ message: "You can only submit applications for your own account." });
+    }
+
+    connection = await getConnection();
+
+    const studentResult = await connection.execute(
+      `SELECT Student_ID AS "studentId"
+      FROM Student
+      WHERE Student_ID = :studentId`,
+      { studentId },
+      dbOptions
+    );
+
+    if (studentResult.rows.length === 0) {
+      return res.status(404).json({ message: "Student not found." });
+    }
+
+    const scholarshipResult = await connection.execute(
+      `SELECT Scholarship_ID AS "scholarshipId"
+      FROM Scholarship
+      WHERE Scholarship_ID = :scholarshipId`,
+      { scholarshipId },
+      dbOptions
+    );
+
+    if (scholarshipResult.rows.length === 0) {
+      return res.status(404).json({ message: "Scholarship not found." });
+    }
+
+    const duplicateResult = await connection.execute(
+      `SELECT Application_ID AS "applicationId"
+      FROM Application
+      WHERE Student_ID = :studentId
+        AND Scholarship_ID = :scholarshipId`,
+      { studentId, scholarshipId },
+      dbOptions
+    );
+
+    if (duplicateResult.rows.length > 0) {
+      return res.status(409).json({
+        message: "An application for this scholarship already exists for the student."
+      });
+    }
+
+    const applicationId = await getNextId(
+      connection,
+      "Application",
+      "Application_ID",
+      "nextApplicationId"
+    );
+
+    await connection.execute(
+      `INSERT INTO Application (
+        Application_ID,
+        Application_Date,
+        Status,
+        Student_ID,
+        Scholarship_ID
+      ) VALUES (
+        :applicationId,
+        SYSDATE,
+        :status,
+        :studentId,
+        :scholarshipId
+      )`,
+      {
+        applicationId,
+        status: "Pending",
+        studentId,
+        scholarshipId
+      }
+    );
+
+    await logApplicationStatusEvent(connection, {
+      applicationId,
+      status: "Pending",
+      eventType: "Submitted",
+      notes: "Application submitted by student.",
+      actorRole: "Student",
+      actorId: studentId
+    });
+
+    await connection.commit();
+
+    return res.status(201).json({
+      message: "Application submitted successfully.",
+      application: {
+        applicationId,
+        studentId,
+        scholarshipId,
+        status: "Pending"
+      }
+    });
+  } catch (error) {
+    if (connection) {
+      await connection.rollback();
+    }
+
+    return next(error);
+  } finally {
+    if (connection) {
+      await connection.close();
+    }
+  }
+}
+
+export async function uploadApplicationDocument(req, res, next) {
+  let connection;
+
+  try {
+    const { applicationId } = req.validated?.params || req.params;
+    const { documentType, documentLabel } = documentUploadSchema.parse(req.body);
+
+    if (!req.auth || req.auth.role !== "Student") {
+      return res.status(401).json({ message: "Student authentication required." });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: "A document file is required." });
+    }
+
+    connection = await getConnection();
+
+    const application = await getApplicationOwnership(connection, applicationId);
+
+    if (!application) {
+      return res.status(404).json({ message: "Application not found." });
+    }
+
+    if (Number(req.auth.studentId) !== Number(application.studentId)) {
+      return res.status(403).json({
+        message: "You can only upload documents for your own applications."
+      });
+    }
+
+    const existingDocument = await connection.execute(
+      `SELECT Application_Document_ID AS "applicationDocumentId"
+      FROM Application_Document
+      WHERE Application_ID = :applicationId
+        AND Document_Type = :documentType`,
+      { applicationId, documentType },
+      dbOptions
+    );
+
+    if (existingDocument.rows.length > 0) {
+      return res.status(409).json({
+        message: "A document of this type already exists for this application."
+      });
+    }
+
+    const applicationDocumentId = await getNextId(
+      connection,
+      "Application_Document",
+      "Application_Document_ID",
+      "nextApplicationDocumentId"
+    );
+
+    await connection.execute(
+      `INSERT INTO Application_Document (
+        Application_Document_ID,
+        Application_ID,
+        Document_Type,
+        Document_Label,
+        File_Name,
+        File_Path,
+        Mime_Type,
+        Uploaded_At
+      ) VALUES (
+        :applicationDocumentId,
+        :applicationId,
+        :documentType,
+        :documentLabel,
+        :fileName,
+        :filePath,
+        :mimeType,
+        SYSTIMESTAMP
+      )`,
+      {
+        applicationDocumentId,
+        applicationId,
+        documentType,
+        documentLabel: documentLabel || null,
+        fileName: req.file.filename,
+        filePath: req.file.path,
+        mimeType: req.file.mimetype
+      }
+    );
+
+    await connection.commit();
+
+    return res.status(201).json({
+      message: "Document uploaded successfully.",
+      document: {
+        applicationDocumentId,
+        applicationId,
+        documentType,
+        documentLabel: documentLabel || null,
+        fileName: req.file.filename,
+        filePath: req.file.path
+      }
+    });
+  } catch (error) {
+    if (connection) {
+      await connection.rollback();
+    }
+
+    return next(error);
+  } finally {
+    if (connection) {
+      await connection.close();
+    }
+  }
+}
+
+export async function getApplicationDocuments(req, res, next) {
+  let connection;
+
+  try {
+    const { applicationId } = req.validated?.params || req.params;
+
+    if (!req.auth || req.auth.role !== "Student") {
+      return res.status(401).json({ message: "Student authentication required." });
+    }
+
+    connection = await getConnection();
+
+    const application = await getApplicationOwnership(connection, applicationId);
+
+    if (!application) {
+      return res.status(404).json({ message: "Application not found." });
+    }
+
+    if (Number(req.auth.studentId) !== Number(application.studentId)) {
+      return res.status(403).json({
+        message: "You can only view documents for your own applications."
+      });
+    }
+
+    const result = await connection.execute(
+      `SELECT
+        Application_Document_ID AS "applicationDocumentId",
+        Application_ID AS "applicationId",
+        Document_Type AS "documentType",
+        Document_Label AS "documentLabel",
+        File_Name AS "fileName",
+        File_Path AS "filePath",
+        Mime_Type AS "mimeType",
+        Uploaded_At AS "uploadedAt"
+      FROM Application_Document
+      WHERE Application_ID = :applicationId
+      ORDER BY Uploaded_At DESC`,
+      { applicationId },
+      dbOptions
+    );
+
+    return res.json({ documents: result.rows });
+  } catch (error) {
+    return next(error);
+  } finally {
+    if (connection) {
+      await connection.close();
+    }
+  }
 }
 
 export async function getPendingApplications(req, res, next) {
@@ -109,7 +444,12 @@ export async function processApplication(req, res, next) {
   let connection;
 
   try {
-    const { applicationId, authorityId, status, verificationDetails = {} } = req.body;
+    const {
+      applicationId,
+      authorityId,
+      status,
+      verificationDetails = {}
+    } = req.validated?.body || req.body;
 
     if (!applicationId || !authorityId || !VALID_STATUSES.has(status)) {
       return res.status(400).json({
@@ -206,6 +546,15 @@ export async function processApplication(req, res, next) {
       { status, applicationId }
     );
 
+    await logApplicationStatusEvent(connection, {
+      applicationId,
+      status,
+      eventType: status === "Approved" ? "Approved" : "Rejected",
+      notes: verificationDetails.documentsStatus || null,
+      actorRole: "Authority",
+      actorId: authorityId
+    });
+
     let disbursement = null;
 
     if (status === "Approved") {
@@ -273,7 +622,7 @@ export async function undoApplication(req, res, next) {
   let connection;
 
   try {
-    const { applicationId } = req.body;
+    const { applicationId } = req.validated?.body || req.body;
 
     if (!applicationId) {
       return res.status(400).json({ message: "applicationId is required." });
@@ -322,6 +671,15 @@ export async function undoApplication(req, res, next) {
       WHERE Application_ID = :applicationId`,
       { status: "Pending", applicationId }
     );
+
+    await logApplicationStatusEvent(connection, {
+      applicationId,
+      status: "Pending",
+      eventType: "Reopened",
+      notes: "Decision was undone and application moved back to pending.",
+      actorRole: "Authority",
+      actorId: null
+    });
 
     await connection.commit();
 

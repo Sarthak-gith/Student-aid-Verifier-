@@ -1,6 +1,6 @@
 import { dbOptions, getConnection } from "../config/db.js";
-
-const DEFAULT_AUTHORITY_LOGIN_PASSWORD = "verifier123";
+import { env } from "../config/env.js";
+import { createSessionToken } from "../services/authService.js";
 
 async function findAuthority(connection, authorityId) {
   const result = await connection.execute(
@@ -22,7 +22,7 @@ export async function getAuthorityById(req, res, next) {
   let connection;
 
   try {
-    const { authorityId } = req.params;
+    const { authorityId } = req.validated?.params || req.params;
 
     if (!authorityId) {
       return res.status(400).json({ message: "Authority_ID is required." });
@@ -50,7 +50,7 @@ export async function loginAuthority(req, res, next) {
   let connection;
 
   try {
-    const { authorityId, password } = req.body;
+    const { authorityId, password } = req.validated?.body || req.body;
 
     if (!authorityId || !password) {
       return res.status(400).json({
@@ -58,10 +58,7 @@ export async function loginAuthority(req, res, next) {
       });
     }
 
-    const expectedPassword =
-      process.env.AUTHORITY_LOGIN_PASSWORD || DEFAULT_AUTHORITY_LOGIN_PASSWORD;
-
-    if (password !== expectedPassword) {
+    if (password !== env.authorityLoginPassword) {
       return res.status(401).json({ message: "Invalid authority password." });
     }
 
@@ -73,7 +70,15 @@ export async function loginAuthority(req, res, next) {
       return res.status(404).json({ message: "Authority_ID not found." });
     }
 
-    return res.json({ authority });
+    return res.json({
+      authority,
+      token: createSessionToken({
+        sub: String(authority.authorityId),
+        authorityId: authority.authorityId,
+        role: authority.role,
+        department: authority.department
+      })
+    });
   } catch (error) {
     return next(error);
   } finally {
@@ -81,4 +86,14 @@ export async function loginAuthority(req, res, next) {
       await connection.close();
     }
   }
+}
+
+export function getCurrentAuthoritySession(req, res) {
+  return res.json({
+    session: {
+      authorityId: Number(req.auth.authorityId),
+      role: req.auth.role,
+      department: req.auth.department
+    }
+  });
 }

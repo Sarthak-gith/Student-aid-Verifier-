@@ -1,20 +1,16 @@
-import dotenv from "dotenv";
 import app from "./app.js";
 import { closePool } from "./config/db.js";
-
-dotenv.config();
-
-const PORT = process.env.PORT || 5000;
+import { env } from "./config/env.js";
 
 async function startServer() {
-  const server = app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  const server = app.listen(env.port, () => {
+    console.log(`Server running on http://localhost:${env.port}`);
   });
 
   server.on("error", (error) => {
     if (error.code === "EADDRINUSE") {
       console.error(
-        `Port ${PORT} is already in use. Stop the other process or set a different PORT in server/.env.`
+        `Port ${env.port} is already in use. Stop the other process or set a different PORT in server/.env.`
       );
       process.exit(1);
     }
